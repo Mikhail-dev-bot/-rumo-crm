@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Rumo CRM</title>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="logo">Rumo <span>CRM</span></div>
+      <nav>
+        <a href="#" class="nav-item active" data-tab="today">Сегодня</a>
+        <a href="#" class="nav-item" data-tab="clients">Клиенты</a>
+        <a href="#" class="nav-item" data-tab="cars">Автомобили</a>
+        <a href="#" class="nav-item" data-tab="orders">Заказы</a>
+        <a href="#" class="nav-item" data-tab="bookings">Записи</a>
+        <a href="#" class="nav-item" data-tab="analytics">Аналитика</a>
+      </nav>
+      <div class="user-box">Петров И.И.<br><span>Мастер-консультант</span></div>
+    </aside>
+
+    <main class="content">
+      <header class="topbar">
+        <input class="search" placeholder="Поиск клиента, автомобиля, заказа..." />
+      </header>
+
+      <section id="tab-today" class="tab">
+        <h1>Сегодня</h1>
+        <div id="metric-cards" class="metric-row"></div>
+
+        <div class="panels">
+          <div class="panel">
+            <h3>Записи на сегодня</h3>
+            <table id="table-bookings"><thead>
+              <tr><th>Время</th><th>Клиент</th><th>Автомобиль</th><th>Услуга</th><th>Статус</th></tr>
+            </thead><tbody></tbody></table>
+          </div>
+          <div class="panel">
+            <h3>Новые результаты диагностики</h3>
+            <div id="diagnostics-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <section id="tab-clients" class="tab hidden">
+        <h1>Клиенты</h1>
+        <table id="table-clients"><thead>
+          <tr><th>Имя</th><th>Телефон</th><th>Email</th><th>Авто</th><th>Последний визит</th><th>Потрачено</th></tr>
+        </thead><tbody></tbody></table>
+      </section>
+
+      <section id="tab-cars" class="tab hidden">
+        <h1>Автомобили</h1>
+        <table id="table-cars"><thead>
+          <tr><th>Модель</th><th>Госномер</th><th>Пробег</th><th>Год</th></tr>
+        </thead><tbody></tbody></table>
+      </section>
+
+      <section id="tab-orders" class="tab hidden">
+        <h1>Заказы</h1>
+        <table id="table-orders"><thead>
+          <tr><th>Время</th><th>Модель</th><th>Госномер</th><th>Работа</th><th>Статус</th></tr>
+        </thead><tbody></tbody></table>
+      </section>
+
+      <section id="tab-bookings" class="tab hidden">
+        <h1>Записи</h1>
+        <table id="table-bookings-full"><thead>
+          <tr><th>Дата</th><th>Время</th><th>Модель</th><th>Услуга</th><th>Статус</th></tr>
+        </thead><tbody></tbody></table>
+      </section>
+
+      <section id="tab-analytics" class="tab hidden">
+        <h1>Аналитика</h1>
+        <div id="analytics-cards" class="metric-row"></div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>

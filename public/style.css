@@ -1,0 +1,43 @@
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, Segoe UI, Roboto, sans-serif; background: #F5F6FA; color: #1A1A2E; }
+
+.layout { display: flex; min-height: 100vh; }
+
+.sidebar { width: 220px; background: #12131A; color: #fff; display: flex; flex-direction: column; padding: 20px 0; }
+.logo { font-size: 20px; font-weight: 700; padding: 0 20px 24px; }
+.logo span { color: #4C6EF5; }
+.nav-item { display: block; padding: 12px 20px; color: #ccc; text-decoration: none; font-size: 14px; }
+.nav-item:hover { background: #1c1d27; }
+.nav-item.active { background: #1c1d27; color: #fff; border-left: 3px solid #4C6EF5; }
+.user-box { margin-top: auto; padding: 16px 20px; font-size: 13px; color: #ccc; border-top: 1px solid #26272f; }
+.user-box span { color: #888; }
+
+.content { flex: 1; padding: 24px 32px; }
+.topbar { margin-bottom: 24px; }
+.search { width: 100%; max-width: 480px; padding: 10px 14px; border-radius: 10px; border: 1px solid #ddd; }
+
+.tab.hidden { display: none; }
+h1 { font-size: 22px; margin-bottom: 16px; }
+
+.metric-row { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 24px; }
+.metric-card { background: #fff; border-radius: 14px; padding: 16px 20px; min-width: 140px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.metric-card .num { font-size: 28px; font-weight: 700; }
+.metric-card .label { color: #888; font-size: 13px; margin-top: 4px; }
+.metric-card.red .num { color: #E4572E; }
+.metric-card.orange .num { color: #F2A93B; }
+.metric-card.blue .num { color: #4C6EF5; }
+.metric-card.green .num { color: #3BAA57; }
+
+.panels { display: flex; gap: 16px; flex-wrap: wrap; }
+.panel { flex: 1; min-width: 320px; background: #fff; border-radius: 14px; padding: 16px 20px; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+.panel h3 { margin-top: 0; font-size: 15px; }
+
+table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 14px; overflow: hidden; }
+th, td { text-align: left; padding: 10px 12px; font-size: 14px; border-bottom: 1px solid #f0f0f0; }
+th { color: #888; font-weight: 600; font-size: 12px; text-transform: uppercase; }
+
+.badge { padding: 3px 10px; border-radius: 20px; font-size: 12px; font-weight: 600; }
+.badge.warn { background: #FDEEDC; color: #F2A93B; }
+.badge.danger { background: #FBE4DD; color: #E4572E; }
+.badge.ok { background: #E1F4E6; color: #3BAA57; }
+.badge.info { background: #E7ECFD; color: #4C6EF5; }
