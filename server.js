@@ -3,10 +3,11 @@ const express = require('express');
 const axios = require('axios');
 const path = require('path');
 const cors = require('cors');
+const crypto = require('crypto');
 
 const app = express();
 app.use(cors()); // разрешаем запросы с других доменов (Snack.expo, StackBlitz и т.д.)
-app.use(express.json());
+app.use(express.json({ limit: '12mb' })); // большой лимит нужен для загрузки фото (base64)
 app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3000;
@@ -166,6 +167,58 @@ app.get('/api/analytics/today', async (req, res) => {
       todaysBookings,
       totalClients: clients.length,
     });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── Загрузка фото диагностики в Cloudinary ──
+// Ключи Cloudinary живут только в переменных окружения сервера (Render -> Environment):
+// CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET.
+// Приложение присылает картинку как data URI (base64), сервер подписывает запрос и
+// возвращает постоянную ссылку, которую уже можно хранить в заказе.
+const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
+const CLOUD_KEY = process.env.CLOUDINARY_API_KEY;
+const CLOUD_SECRET = process.env.CLOUDINARY_API_SECRET;
+const MAX_UPLOAD_CHARS = 10 * 1024 * 1024; // ~7 МБ картинки в base64
+
+app.post('/api/upload', async (req, res) => {
+  try {
+    if (!CLOUD_NAME || !CLOUD_KEY || !CLOUD_SECRET) {
+      return res.status(503).json({ error: 'Cloudinary не настроен на сервере' });
+    }
+    const { image } = req.body || {};
+    if (typeof image !== 'string' || !/^data:image\/(jpeg|jpg|png|webp);base64,/.test(image)) {
+      return res.status(400).json({ error: 'Ожидается картинка в формате data URI (base64)' });
+    }
+    if (image.length > MAX_UPLOAD_CHARS) {
+      return res.status(413).json({ error: 'Файл слишком большой' });
+    }
+
+    const timestamp = Math.floor(Date.now() / 1000);
+    const folder = 'rumo/diagnostics';
+    // Подпись Cloudinary: параметры по алфавиту + секрет, SHA-1
+    const signature = crypto
+      .createHash('sha1')
+      .update(`folder=${folder}&timestamp=${timestamp}${CLOUD_SECRET}`)
+      .digest('hex');
+
+    const form = new FormData();
+    form.append('file', image);
+    form.append('api_key', CLOUD_KEY);
+    form.append('timestamp', String(timestamp));
+    form.append('folder', folder);
+    form.append('signature', signature);
+
+    const r = await fetch(`https://api.cloudinary.com/v1_1/${CLOUD_NAME}/image/upload`, {
+      method: 'POST',
+      body: form,
+    });
+    const data = await r.json();
+    if (!r.ok) {
+      return res.status(502).json({ error: (data.error && data.error.message) || 'Ошибка Cloudinary' });
+    }
+    res.status(201).json({ url: data.secure_url, publicId: data.public_id });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
