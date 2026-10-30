@@ -2,8 +2,10 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const path = require('path');
+const cors = require('cors');
 
 const app = express();
+app.use(cors()); // разрешаем запросы с других доменов (Snack.expo, StackBlitz и т.д.)
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
