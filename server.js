@@ -147,7 +147,9 @@ app.get('/api/analytics/today', async (req, res) => {
     const today = new Date().toISOString().slice(0, 10);
 
     const needsAttention = orders.filter((o) =>
-      (o.recommendations || []).some((r) => r.priority === 'high')
+      (o.recommendations || []).some(
+        (r) => !r.completed && (r.priority === 'high' || r.status === 'Требует внимания')
+      )
     ).length;
 
     const newDiagnostics = orders.filter(
