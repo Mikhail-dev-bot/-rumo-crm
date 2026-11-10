@@ -6,8 +6,16 @@ const scrypt = promisify(crypto.scrypt);
 const KEY_LEN = 64;
 
 // "+7 (999) 123-45-67" -> "+79991234567", "Master " -> "master"
+// Логин приводим к единому виду. Если это российский телефон, то 8999…, 7999…,
+// 999… и +7 999… превращаются в +7999… (логины вроде "master" не трогаем).
 function normLogin(s) {
-  return String(s || '').toLowerCase().replace(/[\s()\-]/g, '');
+  const v = String(s || '').toLowerCase().replace(/[\s()\-.]/g, '');
+  if (/^\+?\d+$/.test(v)) {
+    const d = v.replace(/\D/g, '');
+    if (d.length === 11 && (d[0] === '8' || d[0] === '7')) return `+7${d.slice(1)}`;
+    if (d.length === 10 && d[0] === '9') return `+7${d}`;
+  }
+  return v;
 }
 
 async function hashPassword(password) {
