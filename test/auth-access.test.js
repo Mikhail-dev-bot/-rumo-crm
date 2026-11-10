@@ -33,6 +33,9 @@ test('токен: подпись, срок, подделка', () => {
 test('логин нормализуется', () => {
   assert.strictEqual(auth.normLogin(' +7 (999) 123-45-67 '), '+79991234567');
   assert.strictEqual(auth.normLogin('Master'), 'master');
+  for (const v of ['89991234567', '8 (999) 123-45-67', '79991234567', '9991234567', '+7 999 123 45 67']) {
+    assert.strictEqual(auth.normLogin(v), '+79991234567');
+  }
 });
 
 test('ограничитель попыток входа', () => {
