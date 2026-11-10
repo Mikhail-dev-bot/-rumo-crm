@@ -67,3 +67,8 @@ th { color: #888; font-weight: 600; font-size: 12px; text-transform: uppercase; 
 .finding-comment { margin-top: 4px; }
 .photos { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .photos img { width: 120px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid #eee; }
+
+.actions { white-space: nowrap; }
+.actions button { padding: 5px 10px; border-radius: 6px; border: 1px solid; cursor: pointer; font-size: 13px; margin-right: 4px; }
+.btn-ok { background: #3BAA57; border-color: #3BAA57; color: #fff; }
+.btn-no { background: #fff; border-color: #E4572E; color: #E4572E; }

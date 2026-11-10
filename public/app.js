@@ -1,5 +1,6 @@
 const STATUS_BADGE = {
   'Подтверждена': 'ok',
+  'Отменена': 'danger',
   'Завершён': 'ok',
   'В работе': 'warn',
   'Новая заявка': 'warn',
@@ -27,6 +28,7 @@ const TOKEN_KEY = 'rumo_token';
 let token = null;
 try { token = sessionStorage.getItem(TOKEN_KEY); } catch (e) { /* хранилище недоступно */ }
 let refreshTimer = null;
+let currentUserName = '';
 
 function saveToken(value) {
   token = value;
@@ -88,6 +90,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
       return;
     }
     saveToken(data.token);
+    currentUserName = data.user.name;
     document.getElementById('user-name').textContent = data.user.name;
     hideLogin();
     startApp();
@@ -199,19 +202,42 @@ async function renderOrders() {
 // ── Вкладка "Записи" ──
 async function renderBookingsFull() {
   const bookings = await fetchJSON('/api/bookings');
+  // новые заявки сверху, остальные по дате (свежие первыми)
+  const rank = (b) => (b.status === 'Новая заявка' ? 0 : 1);
   document.querySelector('#table-bookings-full tbody').innerHTML = bookings
     .slice()
-    .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
+    .sort((a, b) => rank(a) - rank(b) || `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
     .map(b => `
     <tr>
       <td>${esc(b.date)}</td>
       <td>${esc(b.time)}</td>
-      <td>${esc(b.carModel)} (${esc(b.plate)})</td>
+      <td>${esc(b.carModel)} (${esc(b.plate)})${b.phone ? `<div class="note">${esc(b.phone)}</div>` : ''}</td>
       <td>${esc(b.serviceType)}${b.comment ? `<div class="note">${esc(b.comment)}</div>` : ''}</td>
       <td>${badge(b.status)}</td>
+      <td class="actions">${b.status === 'Новая заявка' ? `
+        <button type="button" class="btn-ok" data-booking="${esc(b.id)}" data-set="Подтверждена">Подтвердить</button>
+        <button type="button" class="btn-no" data-booking="${esc(b.id)}" data-set="Отменена">Отклонить</button>` : ''}</td>
     </tr>
-  `).join('');
+  `).join('') || '<tr><td colspan="6">Записей пока нет</td></tr>';
 }
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-booking]');
+  if (!btn) return;
+  btn.disabled = true;
+  const status = btn.dataset.set;
+  try {
+    await fetchJSON(`/api/bookings/${encodeURIComponent(btn.dataset.booking)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(status === 'Подтверждена' ? { status, master: currentUserName } : { status }),
+    });
+    renderBookingsFull().catch(console.error);
+    renderToday();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Ошибка, повторить';
+  }
+});
 
 // ── Вкладка "Аналитика" ──
 async function renderAnalytics() {
@@ -321,6 +347,7 @@ function startApp() {
   try {
     const me = await fetchJSON('/api/auth/me');
     if (me.role !== 'master') { showLogin('CRM доступна только мастеру'); return; }
+    currentUserName = me.name;
     document.getElementById('user-name').textContent = me.name;
     hideLogin();
     startApp();
