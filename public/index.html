@@ -16,6 +16,9 @@
       <div id="login-error" class="login-error"></div>
     </form>
   </div>
+  <div id="order-modal" class="modal-overlay hidden">
+    <div class="modal-card"><button id="order-close" class="modal-close" type="button">×</button><div id="order-body"></div></div>
+  </div>
   <div class="layout">
     <aside class="sidebar">
       <div class="logo">Rumo <span>CRM</span></div>
@@ -77,7 +80,7 @@
       <section id="tab-bookings" class="tab hidden">
         <h1>Записи</h1>
         <table id="table-bookings-full"><thead>
-          <tr><th>Дата</th><th>Время</th><th>Модель</th><th>Услуга</th><th>Статус</th></tr>
+          <tr><th>Дата</th><th>Время</th><th>Модель</th><th>Услуга</th><th>Статус</th><th></th></tr>
         </thead><tbody></tbody></table>
       </section>
 

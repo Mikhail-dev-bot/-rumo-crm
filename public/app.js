@@ -1,5 +1,6 @@
 const STATUS_BADGE = {
   'Подтверждена': 'ok',
+  'Отменена': 'danger',
   'Завершён': 'ok',
   'В работе': 'warn',
   'Новая заявка': 'warn',
@@ -27,6 +28,7 @@ const TOKEN_KEY = 'rumo_token';
 let token = null;
 try { token = sessionStorage.getItem(TOKEN_KEY); } catch (e) { /* хранилище недоступно */ }
 let refreshTimer = null;
+let currentUserName = '';
 
 function saveToken(value) {
   token = value;
@@ -88,6 +90,7 @@ document.getElementById('login-form').addEventListener('submit', async (e) => {
       return;
     }
     saveToken(data.token);
+    currentUserName = data.user.name;
     document.getElementById('user-name').textContent = data.user.name;
     hideLogin();
     startApp();
@@ -140,9 +143,10 @@ async function renderToday() {
       </tr>
     `).join('') || `<tr><td colspan="5">Нет записей на сегодня</td></tr>`;
 
+    ordersCache = orders;
     const withDiagnostics = orders.filter(o => o.diagnosticsSubmittedAt);
     document.getElementById('diagnostics-list').innerHTML = withDiagnostics.map(o => `
-      <div style="padding:10px 0; border-bottom:1px solid #f0f0f0;">
+      <div class="clickable" data-order="${esc(o.id)}" style="padding:10px 0; border-bottom:1px solid #f0f0f0;">
         <strong>${esc(o.model)}</strong> ${o.plate ? `(${esc(o.plate)})` : ''}<br>
         <span style="color:#888; font-size:13px;">${(o.recommendations || []).length} рекомендаций</span>
       </div>
@@ -183,8 +187,9 @@ async function renderCars() {
 // ── Вкладка "Заказы" ──
 async function renderOrders() {
   const orders = await fetchJSON('/api/orders');
+  ordersCache = orders;
   document.querySelector('#table-orders tbody').innerHTML = orders.map(o => `
-    <tr>
+    <tr class="clickable" data-order="${esc(o.id)}">
       <td>${esc(o.time)}</td>
       <td>${esc(o.model)}</td>
       <td>${esc(o.plate)}</td>
@@ -197,19 +202,42 @@ async function renderOrders() {
 // ── Вкладка "Записи" ──
 async function renderBookingsFull() {
   const bookings = await fetchJSON('/api/bookings');
+  // новые заявки сверху, остальные по дате (свежие первыми)
+  const rank = (b) => (b.status === 'Новая заявка' ? 0 : 1);
   document.querySelector('#table-bookings-full tbody').innerHTML = bookings
     .slice()
-    .sort((a, b) => `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
+    .sort((a, b) => rank(a) - rank(b) || `${b.date} ${b.time}`.localeCompare(`${a.date} ${a.time}`))
     .map(b => `
     <tr>
       <td>${esc(b.date)}</td>
       <td>${esc(b.time)}</td>
-      <td>${esc(b.carModel)} (${esc(b.plate)})</td>
+      <td>${esc(b.carModel)} (${esc(b.plate)})${b.phone ? `<div class="note">${esc(b.phone)}</div>` : ''}</td>
       <td>${esc(b.serviceType)}${b.comment ? `<div class="note">${esc(b.comment)}</div>` : ''}</td>
       <td>${badge(b.status)}</td>
+      <td class="actions">${b.status === 'Новая заявка' ? `
+        <button type="button" class="btn-ok" data-booking="${esc(b.id)}" data-set="Подтверждена">Подтвердить</button>
+        <button type="button" class="btn-no" data-booking="${esc(b.id)}" data-set="Отменена">Отклонить</button>` : ''}</td>
     </tr>
-  `).join('');
+  `).join('') || '<tr><td colspan="6">Записей пока нет</td></tr>';
 }
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-booking]');
+  if (!btn) return;
+  btn.disabled = true;
+  const status = btn.dataset.set;
+  try {
+    await fetchJSON(`/api/bookings/${encodeURIComponent(btn.dataset.booking)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(status === 'Подтверждена' ? { status, master: currentUserName } : { status }),
+    });
+    renderBookingsFull().catch(console.error);
+    renderToday();
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'Ошибка, повторить';
+  }
+});
 
 // ── Вкладка "Аналитика" ──
 async function renderAnalytics() {
@@ -228,6 +256,75 @@ async function renderAnalytics() {
     <div class="metric-card red"><div class="num">${lowStock}</div><div class="label">Запчасти на исходе</div></div>
   `;
 }
+
+
+// ── Карточка заказа: результаты диагностики с фото ──
+let ordersCache = [];
+const ORDER_STATUSES = ['Запись', 'В работе', 'Диагностика завершена', 'Завершён'];
+
+// фото показываем только с нашего Cloudinary, остальное не открываем
+const safePhoto = (u) => typeof u === 'string' && u.startsWith('https://res.cloudinary.com/');
+
+function findingHtml(f) {
+  const photos = (f.photos || []).filter(safePhoto).map(u =>
+    `<a href="${esc(u)}" target="_blank" rel="noopener"><img src="${esc(u)}" alt="Фото" loading="lazy"></a>`).join('');
+  return `
+    <div class="finding">
+      <div class="finding-head"><strong>${esc(f.part)}</strong> ${badge(f.status)}${f.completed ? ' <span class="badge ok">Выполнено</span>' : ''}</div>
+      ${f.comment ? `<div class="finding-comment">${esc(f.comment)}</div>` : ''}
+      ${f.mileageHint ? `<div class="note">${esc(f.mileageHint)}</div>` : ''}
+      ${photos ? `<div class="photos">${photos}</div>` : ''}
+    </div>`;
+}
+
+function openOrder(id) {
+  const o = ordersCache.find(x => String(x.id) === String(id));
+  if (!o) return;
+  const findings = o.findings || [];
+  const problems = findings.filter(f => f.status !== 'Норма' && f.status !== 'OK');
+  const ok = findings.filter(f => f.status === 'Норма' || f.status === 'OK');
+  document.getElementById('order-body').innerHTML = `
+    <h2>${esc(o.model)} <small>${esc(o.plate)}</small></h2>
+    <div class="order-meta">
+      <div><span>Проблема</span>${esc(o.issue)}</div>
+      <div><span>Механик</span>${esc(o.mechanic || '—')}</div>
+      <div><span>Дата</span>${esc(o.date || (o.diagnosticsSubmittedAt || '').slice(0, 10) || '—')}</div>
+      <div><span>Пробег</span>${o.mileage ? esc(Number(o.mileage).toLocaleString('ru-RU')) + ' км' : '—'}</div>
+    </div>
+    <label class="status-row">Статус
+      <select id="order-status">
+        ${ORDER_STATUSES.concat(ORDER_STATUSES.includes(o.status) ? [] : [o.status]).map(s =>
+          `<option ${s === o.status ? 'selected' : ''}>${esc(s)}</option>`).join('')}
+      </select>
+      <button id="order-status-save" type="button">Сохранить</button>
+      <span id="order-status-msg" class="note"></span>
+    </label>
+    <h3>Требуют внимания (${problems.length})</h3>
+    ${problems.map(findingHtml).join('') || '<p class="note">Нет замечаний</p>'}
+    ${ok.length ? `<h3>В норме (${ok.length})</h3><p class="note">${ok.map(f => esc(f.part)).join(', ')}</p>` : ''}
+    ${findings.length ? '' : '<p class="note">Диагностика ещё не отправлена</p>'}
+  `;
+  document.getElementById('order-status-save').addEventListener('click', async () => {
+    const msg = document.getElementById('order-status-msg');
+    const status = document.getElementById('order-status').value;
+    msg.textContent = 'Сохраняем…';
+    try {
+      await fetchJSON(`/api/orders/${encodeURIComponent(o.id)}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      o.status = status;
+      msg.textContent = 'Сохранено';
+      renderOrders().catch(console.error);
+    } catch (e) { msg.textContent = 'Не удалось сохранить'; }
+  });
+  document.getElementById('order-modal').classList.remove('hidden');
+}
+
+document.addEventListener('click', (e) => {
+  const row = e.target.closest('[data-order]');
+  if (row) { openOrder(row.dataset.order); return; }
+  if (e.target.id === 'order-modal' || e.target.id === 'order-close') {
+    document.getElementById('order-modal').classList.add('hidden');
+  }
+});
 
 // ── Запуск ──
 function stopRefresh() {
@@ -250,6 +347,7 @@ function startApp() {
   try {
     const me = await fetchJSON('/api/auth/me');
     if (me.role !== 'master') { showLogin('CRM доступна только мастеру'); return; }
+    currentUserName = me.name;
     document.getElementById('user-name').textContent = me.name;
     hideLogin();
     startApp();
