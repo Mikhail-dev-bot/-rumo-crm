@@ -51,3 +51,19 @@ th { color: #888; font-weight: 600; font-size: 12px; text-transform: uppercase; 
 .login-card input { padding: 10px 12px; border-radius: 8px; border: 1px solid #333; background: #101117; color: #fff; font-size: 15px; }
 .login-card button { padding: 10px; border: 0; border-radius: 8px; background: #3b82f6; color: #fff; font-size: 15px; cursor: pointer; }
 .login-error { color: #ff6b6b; font-size: 13px; min-height: 18px; }
+
+.clickable { cursor: pointer; }
+.clickable:hover { background: #f6f8ff; }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow-y: auto; z-index: 900; }
+.modal-card { background: #fff; border-radius: 12px; padding: 24px; width: 100%; max-width: 720px; position: relative; }
+.modal-close { position: absolute; right: 12px; top: 8px; border: 0; background: none; font-size: 28px; cursor: pointer; color: #888; }
+.modal-card h2 small { color: #888; font-weight: 400; font-size: 15px; margin-left: 6px; }
+.order-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 12px 0 16px; }
+.order-meta span { display: block; color: #888; font-size: 12px; }
+.status-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.status-row select, .status-row button { padding: 6px 10px; border-radius: 6px; border: 1px solid #ccc; background: #fff; }
+.status-row button { background: #3b82f6; color: #fff; border-color: #3b82f6; cursor: pointer; }
+.finding { padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+.finding-comment { margin-top: 4px; }
+.photos { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+.photos img { width: 120px; height: 90px; object-fit: cover; border-radius: 8px; border: 1px solid #eee; }
