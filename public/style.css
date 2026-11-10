@@ -41,3 +41,13 @@ th { color: #888; font-weight: 600; font-size: 12px; text-transform: uppercase; 
 .badge.danger { background: #FBE4DD; color: #E4572E; }
 .badge.ok { background: #E1F4E6; color: #3BAA57; }
 .badge.info { background: #E7ECFD; color: #4C6EF5; }
+
+.hidden { display: none !important; }
+.user-box .uname { color: #fff; }
+.user-box a { color: #8ab4ff; font-size: 12px; text-decoration: none; }
+.note { color: #888; font-size: 12px; margin-top: 2px; }
+.login-overlay { position: fixed; inset: 0; background: #14151a; display: flex; align-items: center; justify-content: center; z-index: 1000; }
+.login-card { background: #1c1d25; padding: 32px; border-radius: 12px; width: 320px; display: flex; flex-direction: column; gap: 12px; color: #fff; }
+.login-card input { padding: 10px 12px; border-radius: 8px; border: 1px solid #333; background: #101117; color: #fff; font-size: 15px; }
+.login-card button { padding: 10px; border: 0; border-radius: 8px; background: #3b82f6; color: #fff; font-size: 15px; cursor: pointer; }
+.login-error { color: #ff6b6b; font-size: 13px; min-height: 18px; }

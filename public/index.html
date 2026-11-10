@@ -7,6 +7,15 @@
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body>
+  <div id="login" class="login-overlay hidden">
+    <form id="login-form" class="login-card" autocomplete="on">
+      <div class="logo">Rumo <span>CRM</span></div>
+      <input id="login-name" placeholder="Логин" autocomplete="username" required />
+      <input id="login-pass" type="password" placeholder="Пароль" autocomplete="current-password" required />
+      <button type="submit">Войти</button>
+      <div id="login-error" class="login-error"></div>
+    </form>
+  </div>
   <div class="layout">
     <aside class="sidebar">
       <div class="logo">Rumo <span>CRM</span></div>
@@ -18,7 +27,7 @@
         <a href="#" class="nav-item" data-tab="bookings">Записи</a>
         <a href="#" class="nav-item" data-tab="analytics">Аналитика</a>
       </nav>
-      <div class="user-box">Петров И.И.<br><span>Мастер-консультант</span></div>
+      <div class="user-box"><span id="user-name" class="uname"></span><br><span>Мастер-консультант</span><br><a href="#" id="logout">Выйти</a></div>
     </aside>
 
     <main class="content">

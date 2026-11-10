@@ -1,0 +1,110 @@
+// Права доступа по ролям и фильтрация данных. Чистые функции, без Express и без сети.
+const normPlate = (p) => String(p || '').replace(/\s+/g, '').toUpperCase();
+
+// c = создать (POST), r = читать (GET), u = менять (PATCH), d = удалять (DELETE)
+const PERMS = {
+  master: {
+    bookings: 'crud', orders: 'crud', parts: 'crud', services: 'crud', clients: 'crud', cars: 'crud',
+  },
+  mechanic: {
+    bookings: 'r', orders: 'ru', parts: 'r', services: 'r', clients: 'r', cars: 'r',
+  },
+  client: {
+    bookings: 'rc', orders: 'r', services: 'r', clients: 'r', cars: 'rc',
+  },
+};
+
+const METHOD_LETTER = { GET: 'r', POST: 'c', PATCH: 'u', DELETE: 'd' };
+
+function can(role, entity, method) {
+  const letters = PERMS[role] && PERMS[role][entity];
+  return !!letters && letters.includes(METHOD_LETTER[method]);
+}
+
+// Клиент видит только своё: себя, свои машины, заказы и записи по своим госномерам
+function scopeList(user, entity, list, allCars) {
+  if (user.role !== 'client') return list;
+  const myCars = allCars.filter((c) => Number(c.clientId) === Number(user.clientId));
+  const plates = new Set(myCars.map((c) => normPlate(c.plate)));
+  switch (entity) {
+    case 'clients': return list.filter((c) => Number(c.id) === Number(user.clientId));
+    case 'cars': return myCars;
+    case 'orders': return list.filter((o) => plates.has(normPlate(o.plate)));
+    case 'bookings':
+      return list.filter(
+        (b) => Number(b.clientId) === Number(user.clientId) || plates.has(normPlate(b.plate))
+      );
+    case 'services': return list;
+    default: return [];
+  }
+}
+
+const text = (v, max = 1000) => String(v == null ? '' : v).slice(0, max);
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : null);
+
+// Заявка клиента: берём только разрешённые поля, режем длину, остальное задаёт сервер
+function sanitizeClientBooking(body, user, client, myCars) {
+  const b = body || {};
+  const car = myCars.find((c) => normPlate(c.plate) === normPlate(b.plate));
+  if (!car) return { error: 'Автомобиль не найден среди ваших' };
+  const serviceType = text(b.serviceType, 500).trim();
+  if (!serviceType) return { error: 'Укажите услугу' };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(b.date || ''))) return { error: 'Некорректная дата' };
+  if (!/^\d{2}:\d{2}$/.test(String(b.time || ''))) return { error: 'Некорректное время' };
+  return {
+    value: {
+      carModel: car.model,
+      plate: car.plate,
+      mileage: num(b.mileage),
+      serviceType,
+      services: (Array.isArray(b.services) ? b.services : []).slice(0, 20).map((x) => text(x, 200)),
+      date: b.date,
+      time: b.time,
+      comment: text(b.comment, 1000),
+      status: 'Новая заявка',
+      master: '',
+      phone: client ? client.phone : '',
+      clientId: Number(user.clientId),
+    },
+  };
+}
+
+function sanitizeClientCar(body, user) {
+  const b = body || {};
+  const model = text(b.model, 100).trim();
+  const plate = text(b.plate, 20).trim();
+  if (!model || !plate) return { error: 'Укажите модель и госномер' };
+  return {
+    value: { model, plate, year: num(b.year), mileage: num(b.mileage) || 0, clientId: Number(user.clientId) },
+  };
+}
+
+// Приоритет и признак выполнения выводим на сервере, чтобы не зависеть от версии приложения
+function normalizeRecommendations(list) {
+  return (Array.isArray(list) ? list : []).map((r) => ({
+    ...r,
+    priority: r.priority || (r.status === 'Требует внимания' ? 'high' : 'medium'),
+    completed: !!r.completed,
+  }));
+}
+
+const PHOTO_PREFIX = 'https://res.cloudinary.com/';
+
+// Замечания от механика: оставляем только известные поля, фото только с нашего Cloudinary
+function sanitizeFindings(list) {
+  return (Array.isArray(list) ? list : []).slice(0, 100).map((f) => ({
+    part: text(f && f.part, 200),
+    status: text(f && f.status, 50),
+    comment: text(f && f.comment),
+    priority: text(f && f.priority, 20),
+    mileageHint: text(f && f.mileageHint, 200),
+    photos: (Array.isArray(f && f.photos) ? f.photos : [])
+      .filter((u) => typeof u === 'string' && u.startsWith(PHOTO_PREFIX) && u.length < 500)
+      .slice(0, 10),
+  })).filter((f) => f.part);
+}
+
+module.exports = {
+  normPlate, PERMS, can, scopeList, sanitizeClientBooking, sanitizeClientCar,
+  normalizeRecommendations, sanitizeFindings,
+};
