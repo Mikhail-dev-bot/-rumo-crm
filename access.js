@@ -10,7 +10,7 @@ const PERMS = {
     bookings: 'r', orders: 'ru', parts: 'r', services: 'r', clients: 'r', cars: 'r',
   },
   client: {
-    bookings: 'rc', orders: 'r', services: 'r', clients: 'r', cars: 'rc',
+    bookings: 'rc', orders: 'r', services: 'r', clients: 'r', cars: 'rcu',
   },
 };
 
@@ -118,7 +118,21 @@ function validateNewClient(body, normLogin) {
   return { value: { name, login, phone, email } };
 }
 
+// Пробег: целое число км от 0 до 2 000 000; если известен текущий, уменьшать нельзя
+function sanitizeMileage(value, current) {
+  const n = Number(value);
+  if (value === '' || value == null || !Number.isFinite(n) || n < 0 || n > 2000000) {
+    return { error: 'Укажите пробег числом от 0 до 2 000 000 км' };
+  }
+  const km = Math.round(n);
+  if (current != null && Number(current) > km) {
+    return { error: `Пробег не может быть меньше текущего (${Number(current)} км)` };
+  }
+  return { value: km };
+}
+
 module.exports = {
+  sanitizeMileage,
   validateNewClient,
   normPlate, PERMS, can, scopeList, sanitizeClientBooking, sanitizeClientCar,
   normalizeRecommendations, sanitizeFindings,

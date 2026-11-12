@@ -347,7 +347,16 @@ for (const name of ENTITIES) {
       const idx = list.findIndex((i) => String(i.id) === String(req.params.id));
       if (idx === -1) return res.status(404).json({ error: 'Not found' });
       // механик может менять у заказа только статус
-      const body = req.user.role === 'mechanic' ? pick(req.body, ['status']) : (req.body || {});
+      let body = req.user.role === 'mechanic' ? pick(req.body, ['status']) : (req.body || {});
+      if (req.user.role === 'client') {
+        // клиент меняет только пробег своей машины, и только вверх
+        if (name !== 'cars' || Number(list[idx].clientId) !== Number(req.user.clientId)) {
+          return res.status(404).json({ error: 'Not found' });
+        }
+        const m = acc.sanitizeMileage(req.body && req.body.mileage, list[idx].mileage);
+        if (m.error) return res.status(400).json({ error: m.error });
+        body = { mileage: m.value };
+      }
       list[idx] = { ...list[idx], ...body, id: list[idx].id };
       await saveEntity(name, list);
       res.json(list[idx]);
@@ -377,9 +386,24 @@ app.post('/api/orders/:id/diagnostics', requireRole('mechanic', 'master'), async
     const idx = orders.findIndex((o) => String(o.id) === String(req.params.id));
     if (idx === -1) return res.status(404).json({ error: 'Заказ не найден' });
 
+    // пробег с осмотра: пишем в заказ, а у машины обновляем, если он больше прежнего
+    let mileage = orders[idx].mileage;
+    if (req.body && req.body.mileage != null && req.body.mileage !== '') {
+      const m = acc.sanitizeMileage(req.body.mileage);
+      if (m.error) return res.status(400).json({ error: m.error });
+      mileage = m.value;
+      const cars = [...(await getEntity('cars'))];
+      const ci = cars.findIndex((c) => acc.normPlate(c.plate) === acc.normPlate(orders[idx].plate));
+      if (ci !== -1 && Number(cars[ci].mileage || 0) < mileage) {
+        cars[ci] = { ...cars[ci], mileage };
+        await saveEntity('cars', cars);
+      }
+    }
+
     const now = new Date().toISOString();
     orders[idx] = {
       ...orders[idx],
+      mileage,
       mechanic: req.user.name,
       findings,
       recommendations,
