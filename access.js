@@ -131,10 +131,32 @@ function sanitizeMileage(value, current) {
   return { value: km };
 }
 
+// Заказ-наряд из записи клиента
+function orderFromBooking(b, { id, mechanic, master, today }) {
+  const parts = [b.serviceType, b.comment].filter(Boolean);
+  return {
+    id,
+    bookingId: b.id,
+    clientId: b.clientId != null ? b.clientId : null,
+    date: b.date || today,
+    time: b.time || '',
+    model: b.carModel || '',
+    plate: b.plate || '',
+    mileage: b.mileage != null ? b.mileage : null,
+    issue: parts.join('. ').slice(0, 600),
+    status: 'В работе',
+    master: master || '',
+    mechanic: mechanic || '',
+    findings: [],
+    recommendations: [],
+  };
+}
+
 const MAX_CARS_PER_CLIENT = 10;
 const MAX_OPEN_BOOKINGS = 10;
 
 module.exports = {
+  orderFromBooking,
   MAX_CARS_PER_CLIENT, MAX_OPEN_BOOKINGS,
   sanitizeMileage,
   validateNewClient,
