@@ -104,7 +104,22 @@ function sanitizeFindings(list) {
   })).filter((f) => f.part);
 }
 
+// Данные нового клиента: имя, телефон (российский), необязательная почта
+function validateNewClient(body, normLogin) {
+  const b = body || {};
+  const name = text(b.name, 100).trim();
+  if (name.length < 2) return { error: 'Укажите имя' };
+  const login = normLogin(b.phone);
+  if (!/^\+7\d{10}$/.test(login)) return { error: 'Укажите телефон в формате 89991234567' };
+  const email = text(b.email, 100).trim();
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { error: 'Некорректная почта' };
+  const d = login.slice(2);
+  const phone = `+7 (${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6, 8)}-${d.slice(8)}`;
+  return { value: { name, login, phone, email } };
+}
+
 module.exports = {
+  validateNewClient,
   normPlate, PERMS, can, scopeList, sanitizeClientBooking, sanitizeClientCar,
   normalizeRecommendations, sanitizeFindings,
 };

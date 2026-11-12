@@ -70,6 +70,8 @@ async function saveEntity(name, list) {
   return list;
 }
 
+const ALPHABET = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const randomPassword = (len = 10) => Array.from(crypto.randomBytes(len), (b) => ALPHABET[b % ALPHABET.length]).join('');
 const nextId = (list) => (list.length ? Math.max(...list.map((i) => Number(i.id) || 0)) + 1 : 1);
 const fail = (res, e) => res.status(500).json({ error: e.message });
 const publicUser = (u) => ({ id: u.id, name: u.name, role: u.role, clientId: u.clientId || null });
@@ -79,6 +81,63 @@ const publicUser = (u) => ({ id: u.id, name: u.name, role: u.role, clientId: u.c
 const limiter = A.makeRateLimiter(10, 15 * 60 * 1000);
 let DUMMY_HASH; // чтобы время ответа не выдавало, существует ли такой логин
 A.hashPassword('dummy-password').then((h) => { DUMMY_HASH = h; });
+
+// Регистрация: создаём запись клиента и аккаунт. Одна очередь, чтобы два запроса
+// одновременно не получили один и тот же id (данные лежат в JSON-бинах).
+let registerQueue = Promise.resolve();
+function createClientAccount(data, password) {
+  const run = async () => {
+    const users = [...(await getEntity('users'))];
+    if (users.some((u) => A.normLogin(u.login) === data.login)) {
+      const err = new Error('Клиент с таким телефоном уже зарегистрирован');
+      err.status = 409;
+      throw err;
+    }
+    const clients = [...(await getEntity('clients'))];
+    const client = {
+      id: nextId(clients), name: data.name, phone: data.phone, email: data.email,
+      cars: [], lastVisit: '', totalSpent: 0,
+    };
+    clients.push(client);
+    await saveEntity('clients', clients);
+    const user = {
+      id: nextId(users), login: data.login, name: data.name, role: 'client',
+      clientId: client.id, passHash: await A.hashPassword(password),
+    };
+    users.push(user);
+    await saveEntity('users', users);
+    return { client, user };
+  };
+  const result = registerQueue.then(run, run);
+  registerQueue = result.catch(() => {});
+  return result;
+}
+
+const regLimiter = A.makeRateLimiter(5, 60 * 60 * 1000);
+
+// Самостоятельная регистрация клиента из приложения (без токена)
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    if (!JWT_SECRET || !BINS.users) {
+      return res.status(503).json({ error: 'Авторизация не настроена на сервере' });
+    }
+    if (regLimiter.blocked(req.ip)) {
+      return res.status(429).json({ error: 'Слишком много регистраций, попробуйте позже' });
+    }
+    regLimiter.fail(req.ip); // считаем каждую попытку
+    const v = acc.validateNewClient(req.body, A.normLogin);
+    if (v.error) return res.status(400).json({ error: v.error });
+    const password = req.body && req.body.password;
+    if (typeof password !== 'string' || password.length < 6) {
+      return res.status(400).json({ error: 'Пароль: не короче 6 символов' });
+    }
+    const { user } = await createClientAccount(v.value, password);
+    res.status(201).json({ token: A.signToken({ sub: user.id }, JWT_SECRET), user: publicUser(user) });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    fail(res, e);
+  }
+});
 
 app.post('/api/auth/login', async (req, res) => {
   try {
@@ -182,6 +241,24 @@ app.post('/api/users', requireRole('master'), async (req, res) => {
     await saveEntity('users', users);
     res.status(201).json(publicUser(user));
   } catch (e) { fail(res, e); }
+});
+
+// Мастер заводит клиента (например, при визите в сервис); пароль показывается один раз
+app.post('/api/users/client', requireRole('master'), async (req, res) => {
+  try {
+    const v = acc.validateNewClient(req.body, A.normLogin);
+    if (v.error) return res.status(400).json({ error: v.error });
+    const given = req.body && req.body.password;
+    if (given != null && (typeof given !== 'string' || given.length < 6)) {
+      return res.status(400).json({ error: 'Пароль: не короче 6 символов' });
+    }
+    const password = given || randomPassword();
+    const { client, user } = await createClientAccount(v.value, password);
+    res.status(201).json({ client, login: user.login, password });
+  } catch (e) {
+    if (e.status) return res.status(e.status).json({ error: e.message });
+    fail(res, e);
+  }
 });
 
 app.post('/api/users/:id/password', requireRole('master'), async (req, res) => {
