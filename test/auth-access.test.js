@@ -55,6 +55,8 @@ test('права по ролям', () => {
   assert.ok(!access.can('mechanic', 'orders', 'DELETE'));
   assert.ok(!access.can('mechanic', 'bookings', 'POST'));
   assert.ok(access.can('client', 'bookings', 'POST'));
+  assert.ok(access.can('client', 'cars', 'PATCH'));
+  assert.ok(!access.can('client', 'orders', 'PATCH'));
   assert.ok(!access.can('client', 'bookings', 'PATCH'));
   assert.ok(!access.can('client', 'parts', 'GET'));
   assert.ok(!access.can('client', 'clients', 'PATCH'));
@@ -162,4 +164,15 @@ test('регистрация клиента: проверка полей и фо
   assert.ok(access.validateNewClient({ name: 'Иван', phone: 'master' }, auth.normLogin).error);
   assert.ok(access.validateNewClient({ name: 'Иван', phone: '89991234567', email: 'bad' }, auth.normLogin).error);
   assert.strictEqual(access.validateNewClient({ name: 'Иван', phone: '89991234567' }, auth.normLogin).value.email, '');
+});
+
+test('пробег: диапазон и запрет уменьшения', () => {
+  assert.strictEqual(access.sanitizeMileage('80500', 80000).value, 80500);
+  assert.strictEqual(access.sanitizeMileage(80000.4, 80000).value, 80000);
+  assert.ok(access.sanitizeMileage(79000, 80000).error);
+  assert.ok(access.sanitizeMileage('abc').error);
+  assert.ok(access.sanitizeMileage('').error);
+  assert.ok(access.sanitizeMileage(-5).error);
+  assert.ok(access.sanitizeMileage(3000000).error);
+  assert.strictEqual(access.sanitizeMileage(10).value, 10);
 });

@@ -219,9 +219,24 @@ async function renderCars() {
       <td>${esc(c.plate)}</td>
       <td>${esc((c.mileage || 0).toLocaleString('ru-RU'))} км</td>
       <td>${esc(c.year)}</td>
+      <td class="actions"><button type="button" class="btn-no" style="color:#3b82f6;border-color:#3b82f6"
+        data-car="${esc(c.id)}" data-km="${esc(c.mileage || 0)}">Изменить пробег</button></td>
     </tr>
   `).join('');
 }
+
+document.addEventListener('click', async (e) => {
+  const btn = e.target.closest('button[data-car]');
+  if (!btn) return;
+  const input = window.prompt('Новый пробег, км', btn.dataset.km);
+  if (input == null) return;
+  const km = Number(String(input).replace(/\s/g, ''));
+  if (!Number.isFinite(km) || km < 0 || km > 2000000) { window.alert('Укажите пробег числом от 0 до 2 000 000'); return; }
+  try {
+    await fetchJSON(`/api/cars/${encodeURIComponent(btn.dataset.car)}`, { method: 'PATCH', body: JSON.stringify({ mileage: Math.round(km) }) });
+    renderCars().catch(console.error);
+  } catch (err) { window.alert('Не удалось сохранить'); }
+});
 
 // ── Вкладка "Заказы" ──
 async function renderOrders() {
