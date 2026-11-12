@@ -153,3 +153,13 @@ test('рекомендации: приоритет и completed выводятс
   assert.deepStrictEqual(out.map((r) => r.completed), [false, false, true]);
   assert.deepStrictEqual(access.normalizeRecommendations(undefined), []);
 });
+
+test('регистрация клиента: проверка полей и форматирование телефона', () => {
+  const ok = access.validateNewClient({ name: ' Иван ', phone: '8 999 123-45-67', email: 'a@b.ru' }, auth.normLogin);
+  assert.deepStrictEqual(ok.value, { name: 'Иван', login: '+79991234567', phone: '+7 (999) 123-45-67', email: 'a@b.ru' });
+  assert.ok(access.validateNewClient({ name: 'И', phone: '89991234567' }, auth.normLogin).error);
+  assert.ok(access.validateNewClient({ name: 'Иван', phone: '12345' }, auth.normLogin).error);
+  assert.ok(access.validateNewClient({ name: 'Иван', phone: 'master' }, auth.normLogin).error);
+  assert.ok(access.validateNewClient({ name: 'Иван', phone: '89991234567', email: 'bad' }, auth.normLogin).error);
+  assert.strictEqual(access.validateNewClient({ name: 'Иван', phone: '89991234567' }, auth.normLogin).value.email, '');
+});

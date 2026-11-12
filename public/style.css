@@ -72,3 +72,10 @@ th { color: #888; font-weight: 600; font-size: 12px; text-transform: uppercase; 
 .actions button { padding: 5px 10px; border-radius: 6px; border: 1px solid; cursor: pointer; font-size: 13px; margin-right: 4px; }
 .btn-ok { background: #3BAA57; border-color: #3BAA57; color: #fff; }
 .btn-no { background: #fff; border-color: #E4572E; color: #E4572E; }
+
+.add-client { padding: 8px 14px; border-radius: 8px; border: 0; cursor: pointer; margin-bottom: 12px; }
+.inline-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+.inline-form input { padding: 8px 10px; border: 1px solid #ccc; border-radius: 6px; min-width: 200px; }
+.inline-form button { padding: 8px 14px; border-radius: 6px; border: 1px solid; cursor: pointer; }
+.nc-result { width: 100%; font-size: 14px; }
+.nc-result.ok { color: #1d7a3a; } .nc-result.err { color: #E4572E; }

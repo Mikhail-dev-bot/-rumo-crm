@@ -58,6 +58,15 @@
 
       <section id="tab-clients" class="tab hidden">
         <h1>Клиенты</h1>
+        <button id="add-client-btn" type="button" class="btn-ok add-client">+ Добавить клиента</button>
+        <form id="add-client-form" class="inline-form hidden">
+          <input id="nc-name" placeholder="Имя и фамилия" required />
+          <input id="nc-phone" placeholder="Телефон, например 89991234567" required />
+          <input id="nc-email" placeholder="Почта (необязательно)" />
+          <button type="submit" class="btn-ok">Создать</button>
+          <button type="button" id="nc-cancel" class="btn-no">Отмена</button>
+          <div id="nc-result" class="nc-result"></div>
+        </form>
         <table id="table-clients"><thead>
           <tr><th>Имя</th><th>Телефон</th><th>Email</th><th>Авто</th><th>Последний визит</th><th>Потрачено</th></tr>
         </thead><tbody></tbody></table>

@@ -171,6 +171,45 @@ async function renderClients() {
   `).join('');
 }
 
+
+// ── Добавить клиента ──
+document.getElementById('add-client-btn').addEventListener('click', () => {
+  document.getElementById('add-client-form').classList.remove('hidden');
+  document.getElementById('nc-result').textContent = '';
+  document.getElementById('nc-name').focus();
+});
+document.getElementById('nc-cancel').addEventListener('click', () => {
+  document.getElementById('add-client-form').classList.add('hidden');
+});
+document.getElementById('add-client-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const out = document.getElementById('nc-result');
+  out.className = 'nc-result';
+  out.textContent = 'Создаём…';
+  try {
+    const res = await fetch('/api/users/client', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        name: document.getElementById('nc-name').value,
+        phone: document.getElementById('nc-phone').value,
+        email: document.getElementById('nc-email').value,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && !data.password) { showLogin('Войдите заново'); return; }
+    if (!res.ok) { out.className = 'nc-result err'; out.textContent = data.error || `Ошибка ${res.status}`; return; }
+    out.className = 'nc-result ok';
+    out.innerHTML = `Клиент создан. Логин: <b>${esc(data.login)}</b>, пароль: <b>${esc(data.password)}</b><br>
+      <span class="note">Пароль показывается один раз. Передайте его клиенту; он сможет сменить его в приложении.</span>`;
+    e.target.reset();
+    renderClients().catch(console.error);
+  } catch (err) {
+    out.className = 'nc-result err';
+    out.textContent = 'Нет связи с сервером';
+  }
+});
+
 // ── Вкладка "Автомобили" ──
 async function renderCars() {
   const cars = await fetchJSON('/api/cars');
