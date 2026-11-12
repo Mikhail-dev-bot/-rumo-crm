@@ -176,3 +176,16 @@ test('пробег: диапазон и запрет уменьшения', () =
   assert.ok(access.sanitizeMileage(3000000).error);
   assert.strictEqual(access.sanitizeMileage(10).value, 10);
 });
+
+test('заказ из записи: поля переносятся, служебные задаёт сервер', () => {
+  const o = access.orderFromBooking(
+    { id: 5, carModel: 'Camry', plate: 'A 123 AA 55', serviceType: 'ТО', comment: 'Стук', date: '2026-12-01', time: '10:00', mileage: 80000, clientId: 1 },
+    { id: 17, mechanic: 'Петров И.И.', master: 'Мастер', today: '2026-11-12' });
+  assert.strictEqual(o.id, 17);
+  assert.strictEqual(o.bookingId, 5);
+  assert.strictEqual(o.issue, 'ТО. Стук');
+  assert.strictEqual(o.status, 'В работе');
+  assert.strictEqual(o.mechanic, 'Петров И.И.');
+  assert.deepStrictEqual(o.findings, []);
+  assert.strictEqual(access.orderFromBooking({ id: 1 }, { id: 2, today: '2026-11-12' }).date, '2026-11-12');
+});

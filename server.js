@@ -430,6 +430,36 @@ for (const name of ENTITIES) {
   }));
 }
 
+// ── Мастер создаёт заказ-наряд из записи и назначает механика ──
+app.post('/api/bookings/:id/order', requireRole('master'), locked(async (req, res) => {
+  try {
+    const bookings = [...(await getEntity('bookings'))];
+    const bi = bookings.findIndex((b) => String(b.id) === String(req.params.id));
+    if (bi === -1) return res.status(404).json({ error: 'Запись не найдена' });
+    const b = bookings[bi];
+    if (b.orderId != null) return res.status(409).json({ error: `Заказ уже создан (№ ${b.orderId})` });
+    if (b.status === 'Отменена') return res.status(400).json({ error: 'Запись отклонена' });
+
+    const mechanicName = String((req.body && req.body.mechanic) || '').slice(0, 100);
+    if (mechanicName) {
+      const users = await getEntity('users');
+      if (!users.some((u) => u.role === 'mechanic' && u.name === mechanicName)) {
+        return res.status(400).json({ error: 'Такого механика нет' });
+      }
+    }
+    const orders = [...(await getEntity('orders'))];
+    const order = acc.orderFromBooking(b, {
+      id: nextId(orders), mechanic: mechanicName, master: req.user.name,
+      today: new Date().toISOString().slice(0, 10),
+    });
+    orders.push(order);
+    await saveEntity('orders', orders);
+    bookings[bi] = { ...b, status: 'Подтверждена', master: req.user.name, orderId: order.id };
+    await saveEntity('bookings', bookings);
+    res.status(201).json(order);
+  } catch (e) { fail(res, e); }
+}));
+
 // ── Приложение механика передаёт результаты диагностики сюда ──
 // Обновляет заказ (orders) полями findings/recommendations и статусом.
 // Имя механика и время берутся на сервере, а не из запроса.

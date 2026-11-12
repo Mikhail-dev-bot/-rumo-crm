@@ -255,7 +255,8 @@ async function renderOrders() {
 
 // ── Вкладка "Записи" ──
 async function renderBookingsFull() {
-  const bookings = await fetchJSON('/api/bookings');
+  const [bookings, users] = await Promise.all([fetchJSON('/api/bookings'), fetchJSON('/api/users')]);
+  const mechanics = users.filter(u => u.role === 'mechanic');
   // новые заявки сверху, остальные по дате (свежие первыми)
   const rank = (b) => (b.status === 'Новая заявка' ? 0 : 1);
   document.querySelector('#table-bookings-full tbody').innerHTML = bookings
@@ -268,12 +269,35 @@ async function renderBookingsFull() {
       <td>${esc(b.carModel)} (${esc(b.plate)})${b.phone ? `<div class="note">${esc(b.phone)}</div>` : ''}</td>
       <td>${esc(b.serviceType)}${b.comment ? `<div class="note">${esc(b.comment)}</div>` : ''}</td>
       <td>${badge(b.status)}</td>
-      <td class="actions">${b.status === 'Новая заявка' ? `
+      <td class="actions">${
+        b.status === 'Новая заявка' ? `
         <button type="button" class="btn-ok" data-booking="${esc(b.id)}" data-set="Подтверждена">Подтвердить</button>
-        <button type="button" class="btn-no" data-booking="${esc(b.id)}" data-set="Отменена">Отклонить</button>` : ''}</td>
+        <button type="button" class="btn-no" data-booking="${esc(b.id)}" data-set="Отменена">Отклонить</button>`
+        : (b.status === 'Подтверждена' && b.orderId == null) ? `
+        <select data-mech="${esc(b.id)}">${mechanics.map(m => `<option>${esc(m.name)}</option>`).join('')}</select>
+        <button type="button" class="btn-ok" data-mkorder="${esc(b.id)}">Создать заказ</button>`
+        : (b.orderId != null ? `<span class="note">Заказ № ${esc(b.orderId)}</span>` : '')}</td>
     </tr>
   `).join('') || '<tr><td colspan="6">Записей пока нет</td></tr>';
 }
+
+document.addEventListener('click', async (e) => {
+  const mk = e.target.closest('button[data-mkorder]');
+  if (!mk) return;
+  const sel = document.querySelector(`select[data-mech="${CSS.escape(mk.dataset.mkorder)}"]`);
+  mk.disabled = true;
+  try {
+    await fetchJSON(`/api/bookings/${encodeURIComponent(mk.dataset.mkorder)}/order`, {
+      method: 'POST', body: JSON.stringify({ mechanic: sel ? sel.value : '' }),
+    });
+    renderBookingsFull().catch(console.error);
+    renderOrders().catch(console.error);
+    renderToday();
+  } catch (err) {
+    mk.disabled = false;
+    mk.textContent = 'Ошибка, повторить';
+  }
+});
 
 document.addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-booking]');
