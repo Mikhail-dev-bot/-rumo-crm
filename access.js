@@ -131,7 +131,11 @@ function sanitizeMileage(value, current) {
   return { value: km };
 }
 
+const MAX_CARS_PER_CLIENT = 10;
+const MAX_OPEN_BOOKINGS = 10;
+
 module.exports = {
+  MAX_CARS_PER_CLIENT, MAX_OPEN_BOOKINGS,
   sanitizeMileage,
   validateNewClient,
   normPlate, PERMS, can, scopeList, sanitizeClientBooking, sanitizeClientCar,

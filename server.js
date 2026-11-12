@@ -9,8 +9,26 @@ const acc = require('./access');
 
 const app = express();
 app.set('trust proxy', 1); // за прокси Render, чтобы req.ip был настоящим адресом
-app.use(cors()); // разрешаем запросы с других доменов (Snack.expo и т.д.)
-app.use(express.json({ limit: '12mb' })); // большой лимит нужен для загрузки фото (base64)
+app.use(cors()); // токен идёт в заголовке Authorization, а не в cookie, поэтому открытый CORS не даёт CSRF
+
+// Защитные заголовки. CSP: скрипты и запросы только со своего домена, картинки ещё с Cloudinary.
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    + "img-src 'self' https://res.cloudinary.com data:; connect-src 'self'; "
+    + "frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+  );
+  next();
+});
+
+// Большое тело (фото в base64) разрешено только для /api/upload, везде остальное маленькое
+app.use('/api/upload', express.json({ limit: '12mb' }));
+app.use(express.json({ limit: '100kb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const PORT = process.env.PORT || 3000;
@@ -72,22 +90,45 @@ async function saveEntity(name, list) {
 
 const ALPHABET = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 const randomPassword = (len = 10) => Array.from(crypto.randomBytes(len), (b) => ALPHABET[b % ALPHABET.length]).join('');
+// Все изменения данных идут по одной очереди: данные лежат в JSON-бинах (прочитал, поправил, записал),
+// и без очереди два одновременных запроса затирали бы друг другу правки.
+let dbChain = Promise.resolve();
+const withDb = (fn) => {
+  const r = dbChain.then(fn, fn);
+  dbChain = r.catch(() => {});
+  return r;
+};
+const locked = (handler) => (req, res, next) => withDb(() => handler(req, res, next));
+
 const nextId = (list) => (list.length ? Math.max(...list.map((i) => Number(i.id) || 0)) + 1 : 1);
-const fail = (res, e) => res.status(500).json({ error: e.message });
+// Подробности ошибки пишем в лог сервера, клиенту отдаём общий текст (в сообщении могут быть внутренности)
+const fail = (res, e) => {
+  console.error('Ошибка запроса:', e && e.message);
+  res.status(500).json({ error: 'Внутренняя ошибка сервера' });
+};
+// Отпечаток пароля в токене: после смены пароля старые токены перестают работать
+const pvOf = (u) => crypto.createHash('sha256').update(String(u.passHash)).digest('hex').slice(0, 12);
+const tokenFor = (u) => A.signToken({ sub: u.id, pv: pvOf(u) }, JWT_SECRET);
 const publicUser = (u) => ({ id: u.id, name: u.name, role: u.role, clientId: u.clientId || null });
 
 // ═══════════════ Авторизация ═══════════════
 
-const limiter = A.makeRateLimiter(10, 15 * 60 * 1000);
+const limiter = A.makeRateLimiter(10, 15 * 60 * 1000);       // неудачи на пару адрес+логин
+const ipLimiter = A.makeRateLimiter(60, 15 * 60 * 1000);     // неудачи с одного адреса по любым логинам
+const loginLimiter = A.makeRateLimiter(40, 15 * 60 * 1000);  // неудачи по одному логину с любых адресов
 let DUMMY_HASH; // чтобы время ответа не выдавало, существует ли такой логин
 A.hashPassword('dummy-password').then((h) => { DUMMY_HASH = h; });
 
 // Регистрация: создаём запись клиента и аккаунт. Одна очередь, чтобы два запроса
 // одновременно не получили один и тот же id (данные лежат в JSON-бинах).
-let registerQueue = Promise.resolve();
 function createClientAccount(data, password) {
-  const run = async () => {
+  return withDb(async () => {
     const users = [...(await getEntity('users'))];
+    if (users.length >= MAX_USERS) {
+      const err = new Error('Регистрация временно закрыта');
+      err.status = 503;
+      throw err;
+    }
     if (users.some((u) => A.normLogin(u.login) === data.login)) {
       const err = new Error('Клиент с таким телефоном уже зарегистрирован');
       err.status = 409;
@@ -107,13 +148,12 @@ function createClientAccount(data, password) {
     users.push(user);
     await saveEntity('users', users);
     return { client, user };
-  };
-  const result = registerQueue.then(run, run);
-  registerQueue = result.catch(() => {});
-  return result;
+  });
 }
 
-const regLimiter = A.makeRateLimiter(5, 60 * 60 * 1000);
+const regLimiter = A.makeRateLimiter(5, 60 * 60 * 1000);        // с одного адреса
+const regGlobalLimiter = A.makeRateLimiter(40, 60 * 60 * 1000); // со всех адресов вместе
+const MAX_USERS = 400; // бесплатный бин JSONBin ограничен по размеру
 
 // Самостоятельная регистрация клиента из приложения (без токена)
 app.post('/api/auth/register', async (req, res) => {
@@ -121,10 +161,10 @@ app.post('/api/auth/register', async (req, res) => {
     if (!JWT_SECRET || !BINS.users) {
       return res.status(503).json({ error: 'Авторизация не настроена на сервере' });
     }
-    if (regLimiter.blocked(req.ip)) {
+    if (regLimiter.blocked(req.ip) || regGlobalLimiter.blocked('all')) {
       return res.status(429).json({ error: 'Слишком много регистраций, попробуйте позже' });
     }
-    regLimiter.fail(req.ip); // считаем каждую попытку
+    regLimiter.fail(req.ip); regGlobalLimiter.fail('all'); // считаем каждую попытку
     const v = acc.validateNewClient(req.body, A.normLogin);
     if (v.error) return res.status(400).json({ error: v.error });
     const password = req.body && req.body.password;
@@ -132,7 +172,7 @@ app.post('/api/auth/register', async (req, res) => {
       return res.status(400).json({ error: 'Пароль: не короче 6 символов' });
     }
     const { user } = await createClientAccount(v.value, password);
-    res.status(201).json({ token: A.signToken({ sub: user.id }, JWT_SECRET), user: publicUser(user) });
+    res.status(201).json({ token: tokenFor(user), user: publicUser(user) });
   } catch (e) {
     if (e.status) return res.status(e.status).json({ error: e.message });
     fail(res, e);
@@ -149,19 +189,22 @@ app.post('/api/auth/login', async (req, res) => {
     if (!login || typeof password !== 'string' || !password) {
       return res.status(400).json({ error: 'Введите логин и пароль' });
     }
+    if (login.length > 64 || password.length > 200) {
+      return res.status(401).json({ error: 'Неверный логин или пароль' });
+    }
     const key = `${req.ip}|${login}`;
-    if (limiter.blocked(key)) {
+    if (limiter.blocked(key) || ipLimiter.blocked(req.ip) || loginLimiter.blocked(login)) {
       return res.status(429).json({ error: 'Слишком много попыток, попробуйте через 15 минут' });
     }
     const users = await getEntity('users');
     const user = users.find((u) => A.normLogin(u.login) === login);
     const ok = await A.checkPassword(password, user ? user.passHash : DUMMY_HASH);
     if (!user || !ok) {
-      limiter.fail(key);
+      limiter.fail(key); ipLimiter.fail(req.ip); loginLimiter.fail(login);
       return res.status(401).json({ error: 'Неверный логин или пароль' });
     }
     limiter.reset(key);
-    res.json({ token: A.signToken({ sub: user.id }, JWT_SECRET), user: publicUser(user) });
+    res.json({ token: tokenFor(user), user: publicUser(user) });
   } catch (e) { fail(res, e); }
 });
 
@@ -177,7 +220,7 @@ async function requireAuth(req, res, next) {
     if (!payload) return res.status(401).json({ error: 'Требуется вход' });
     const users = await getEntity('users');
     const user = users.find((u) => String(u.id) === String(payload.sub));
-    if (!user) return res.status(401).json({ error: 'Требуется вход' });
+    if (!user || payload.pv !== pvOf(user)) return res.status(401).json({ error: 'Требуется вход' });
     req.user = user;
     next();
   } catch (e) { fail(res, e); }
@@ -190,7 +233,7 @@ const requireRole = (...roles) => (req, res, next) => (
 
 app.get('/api/auth/me', (req, res) => res.json(publicUser(req.user)));
 
-app.post('/api/auth/password', async (req, res) => {
+app.post('/api/auth/password', locked(async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body || {};
     if (typeof newPassword !== 'string' || newPassword.length < 6) {
@@ -205,14 +248,14 @@ app.post('/api/auth/password', async (req, res) => {
     await saveEntity('users', users);
     res.json({ ok: true });
   } catch (e) { fail(res, e); }
-});
+}));
 
 // ── Управление пользователями: только мастер ──
 app.get('/api/users', requireRole('master'), async (req, res) => {
   try { res.json((await getEntity('users')).map(publicUser)); } catch (e) { fail(res, e); }
 });
 
-app.post('/api/users', requireRole('master'), async (req, res) => {
+app.post('/api/users', requireRole('master'), locked(async (req, res) => {
   try {
     const { login, password, name, role, clientId } = req.body || {};
     if (!['client', 'mechanic', 'master'].includes(role)) {
@@ -241,7 +284,7 @@ app.post('/api/users', requireRole('master'), async (req, res) => {
     await saveEntity('users', users);
     res.status(201).json(publicUser(user));
   } catch (e) { fail(res, e); }
-});
+}));
 
 // Мастер заводит клиента (например, при визите в сервис); пароль показывается один раз
 app.post('/api/users/client', requireRole('master'), async (req, res) => {
@@ -261,7 +304,7 @@ app.post('/api/users/client', requireRole('master'), async (req, res) => {
   }
 });
 
-app.post('/api/users/:id/password', requireRole('master'), async (req, res) => {
+app.post('/api/users/:id/password', requireRole('master'), locked(async (req, res) => {
   try {
     const { password } = req.body || {};
     if (typeof password !== 'string' || password.length < 6) {
@@ -274,9 +317,9 @@ app.post('/api/users/:id/password', requireRole('master'), async (req, res) => {
     await saveEntity('users', users);
     res.json({ ok: true });
   } catch (e) { fail(res, e); }
-});
+}));
 
-app.delete('/api/users/:id', requireRole('master'), async (req, res) => {
+app.delete('/api/users/:id', requireRole('master'), locked(async (req, res) => {
   try {
     if (String(req.params.id) === String(req.user.id)) {
       return res.status(400).json({ error: 'Нельзя удалить самого себя' });
@@ -285,7 +328,7 @@ app.delete('/api/users/:id', requireRole('master'), async (req, res) => {
     await saveEntity('users', users);
     res.status(204).end();
   } catch (e) { fail(res, e); }
-});
+}));
 
 // ═══════════════ Данные: общий CRUD с правами по ролям ═══════════════
 
@@ -310,7 +353,7 @@ for (const name of ENTITIES) {
     } catch (e) { fail(res, e); }
   });
 
-  app.post(`/api/${name}`, guard, async (req, res) => {
+  app.post(`/api/${name}`, guard, locked(async (req, res) => {
     try {
       let data = req.body || {};
       if (req.user.role === 'client') {
@@ -324,6 +367,21 @@ for (const name of ENTITIES) {
         data = r.value;
       }
       const list = [...(await getEntity(name))];
+      if (name === 'cars') {
+        // чужой госномер завести нельзя: по номеру клиент видит заказы и историю машины
+        if (list.some((c) => acc.normPlate(c.plate) === acc.normPlate(data.plate))) {
+          return res.status(409).json({ error: 'Автомобиль с таким госномером уже зарегистрирован' });
+        }
+        if (req.user.role === 'client'
+          && list.filter((c) => Number(c.clientId) === Number(req.user.clientId)).length >= acc.MAX_CARS_PER_CLIENT) {
+          return res.status(400).json({ error: `Не больше ${acc.MAX_CARS_PER_CLIENT} автомобилей` });
+        }
+      }
+      if (name === 'bookings' && req.user.role === 'client'
+        && list.filter((b) => Number(b.clientId) === Number(req.user.clientId) && b.status === 'Новая заявка').length
+          >= acc.MAX_OPEN_BOOKINGS) {
+        return res.status(400).json({ error: 'Слишком много неподтверждённых заявок, дождитесь ответа сервиса' });
+      }
       const item = { ...data, id: nextId(list) }; // id всегда назначает сервер
       list.push(item);
       await saveEntity(name, list);
@@ -339,9 +397,9 @@ for (const name of ENTITIES) {
       }
       res.status(201).json(item);
     } catch (e) { fail(res, e); }
-  });
+  }));
 
-  app.patch(`/api/${name}/:id`, guard, async (req, res) => {
+  app.patch(`/api/${name}/:id`, guard, locked(async (req, res) => {
     try {
       const list = [...(await getEntity(name))];
       const idx = list.findIndex((i) => String(i.id) === String(req.params.id));
@@ -361,21 +419,21 @@ for (const name of ENTITIES) {
       await saveEntity(name, list);
       res.json(list[idx]);
     } catch (e) { fail(res, e); }
-  });
+  }));
 
-  app.delete(`/api/${name}/:id`, guard, async (req, res) => {
+  app.delete(`/api/${name}/:id`, guard, locked(async (req, res) => {
     try {
       const list = (await getEntity(name)).filter((i) => String(i.id) !== String(req.params.id));
       await saveEntity(name, list);
       res.status(204).end();
     } catch (e) { fail(res, e); }
-  });
+  }));
 }
 
 // ── Приложение механика передаёт результаты диагностики сюда ──
 // Обновляет заказ (orders) полями findings/recommendations и статусом.
 // Имя механика и время берутся на сервере, а не из запроса.
-app.post('/api/orders/:id/diagnostics', requireRole('mechanic', 'master'), async (req, res) => {
+app.post('/api/orders/:id/diagnostics', requireRole('mechanic', 'master'), locked(async (req, res) => {
   try {
     const findings = acc.sanitizeFindings(req.body && req.body.findings);
     if (findings.length === 0) return res.status(400).json({ error: 'Нет данных диагностики' });
@@ -414,7 +472,7 @@ app.post('/api/orders/:id/diagnostics', requireRole('mechanic', 'master'), async
     await saveEntity('orders', orders);
     res.json(orders[idx]);
   } catch (e) { fail(res, e); }
-});
+}));
 
 // ── Аналитика для дашборда CRM: только мастер ──
 app.get('/api/analytics/today', requireRole('master'), async (req, res) => {
@@ -459,6 +517,7 @@ app.get('/api/analytics/today', requireRole('master'), async (req, res) => {
 const CLOUD_NAME = process.env.CLOUDINARY_CLOUD_NAME;
 const CLOUD_KEY = process.env.CLOUDINARY_API_KEY;
 const CLOUD_SECRET = process.env.CLOUDINARY_API_SECRET;
+const uploadLimiter = A.makeRateLimiter(60, 60 * 60 * 1000); // фото в час на пользователя
 const MAX_UPLOAD_CHARS = 10 * 1024 * 1024; // ~7 МБ картинки в base64
 
 app.post('/api/upload', requireRole('mechanic', 'master'), async (req, res) => {
@@ -466,6 +525,10 @@ app.post('/api/upload', requireRole('mechanic', 'master'), async (req, res) => {
     if (!CLOUD_NAME || !CLOUD_KEY || !CLOUD_SECRET) {
       return res.status(503).json({ error: 'Cloudinary не настроен на сервере' });
     }
+    if (uploadLimiter.blocked(req.user.id)) {
+      return res.status(429).json({ error: 'Слишком много загрузок, попробуйте позже' });
+    }
+    uploadLimiter.fail(req.user.id); // считаем каждую попытку
     const { image } = req.body || {};
     if (typeof image !== 'string' || !/^data:image\/(jpeg|jpg|png|webp);base64,/.test(image)) {
       return res.status(400).json({ error: 'Ожидается картинка в формате data URI (base64)' });
@@ -504,7 +567,8 @@ app.post('/api/upload', requireRole('mechanic', 'master'), async (req, res) => {
 // Ошибки разбора запроса (например, битый JSON) отдаём как JSON, а не как HTML
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
-  res.status(err.status || 500).json({ error: err.status ? 'Некорректный запрос' : err.message });
+  if (!err.status) console.error('Необработанная ошибка:', err && err.message);
+  res.status(err.status || 500).json({ error: err.status === 413 ? 'Слишком большой запрос' : err.status ? 'Некорректный запрос' : 'Внутренняя ошибка сервера' });
 });
 
 app.listen(PORT, () => {

@@ -75,6 +75,11 @@ function makeRateLimiter(max = 10, windowMs = 15 * 60 * 1000) {
       return h.count >= max;
     },
     fail(key) {
+      if (hits.size > 5000) { // чистим просроченное, чтобы таблица не росла бесконечно
+        const now = Date.now();
+        for (const [k, v] of hits) if (now - v.first > windowMs) hits.delete(k);
+        if (hits.size > 20000) hits.clear();
+      }
       const h = hits.get(key);
       if (!h || Date.now() - h.first > windowMs) hits.set(key, { count: 1, first: Date.now() });
       else h.count += 1;
